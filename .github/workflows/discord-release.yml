@@ -1,0 +1,65 @@
+name: Announce published releases on Discord
+
+on:
+  release:
+    types: [published]
+
+permissions: {}
+
+jobs:
+  notify:
+    runs-on: ubuntu-latest
+    timeout-minutes: 2
+    steps:
+      - name: Send release announcement
+        env:
+          DISCORD_RELEASE_WEBHOOK_URL: ${{ secrets.DISCORD_RELEASE_WEBHOOK_URL }}
+        shell: bash
+        run: |
+          node <<'NODE'
+          const fs = require('node:fs');
+          const event = JSON.parse(fs.readFileSync(process.env.GITHUB_EVENT_PATH, 'utf8'));
+          if (event.action !== 'published' || event.release?.draft || event.repository?.full_name !== 'Antonellihub/TelaLivre-updates') {
+            throw new Error('Unexpected release event');
+          }
+          const release = event.release;
+          const webhook = process.env.DISCORD_RELEASE_WEBHOOK_URL;
+          if (!/^https:\/\/discord\.com\/api\/webhooks\/\d+\/[^/?\s]+$/.test(webhook || '')) {
+            throw new Error('Missing or invalid Discord webhook secret');
+          }
+          if (!release.html_url?.startsWith('https://github.com/Antonellihub/TelaLivre-updates/releases/')) {
+            throw new Error('Unexpected release URL');
+          }
+          const payload = {
+            content: 'Nova versão do Tela Livre publicada!',
+            allowed_mentions: { parse: [] },
+            embeds: [{
+              title: String(release.name || release.tag_name).slice(0, 256),
+              url: release.html_url,
+              description: String(release.body || 'Confira os detalhes e downloads no link da versão.').slice(0, 3500),
+              color: 5793266
+            }]
+          };
+          (async () => {
+            try {
+              const response = await fetch(webhook + '?wait=true', {
+                method: 'POST',
+                redirect: 'error',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(payload),
+                signal: AbortSignal.timeout(30000)
+              });
+              if (!response.ok) {
+                console.error('Discord delivery failed. HTTP status:', response.status);
+                process.exitCode = 1;
+                return;
+              }
+              const message = await response.json();
+              if (!message.id) throw new Error('Missing delivery confirmation');
+              console.log('Discord confirmed the release notification.');
+            } catch {
+              console.error('Discord delivery could not be confirmed.');
+              process.exitCode = 1;
+            }
+          })();
+          NODE
