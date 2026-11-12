@@ -31,8 +31,8 @@ jobs:
             throw new Error('Unexpected release URL');
           }
           const payload = {
-            content: 'Nova versão do Tela Livre publicada!',
-            allowed_mentions: { parse: [] },
+            content: '@everyone Nova versão do Tela Livre publicada!',
+            allowed_mentions: { parse: ['everyone'] },
             embeds: [{
               title: String(release.name || release.tag_name).slice(0, 256),
               url: release.html_url,
